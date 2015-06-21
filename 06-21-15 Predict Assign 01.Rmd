@@ -124,7 +124,7 @@ svmTestAccuracy <- svmTestCM$overall["Accuracy"]
 gbmTrain = trainControl(method = "cv", number = 10)
 set.seed(532)
 gbmFit <- train(classe ~., data = pmlTraininDF, method = "gbm",
-                preProcess = c("center", "scale"), trControl = gbmTrain)
+                preProcess = c("center", "scale"), trControl = gbmTrain, verbose = FALSE)
 
 
 gbmTrainOutcome <- predict(gbmFit, pmlTraininDF)
