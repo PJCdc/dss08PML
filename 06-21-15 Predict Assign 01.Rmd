@@ -107,8 +107,8 @@ The three models were fitted on the training set **pmlTraininDF**. Predictions w
 # Fit a SVM Model and predict on testing set
 svmTrain = trainControl(method = "cv", number = 10)
 set.seed(444)
-system.time(svmFit <- train(classe ~., data = pmlTraininDF, method = "svmRadial",
-                 preProcess = c("center", "scale"), trControl = svmTrain))
+svmFit <- train(classe ~., data = pmlTraininDF, method = "svmRadial",
+                 preProcess = c("center", "scale"), trControl = svmTrain)
 
 svmTrainOutcome <- predict(svmFit, pmlTraininDF)
 svmTrainCM <- confusionMatrix(svmTrainOutcome, pmlTraininDF$classe)
@@ -123,8 +123,8 @@ svmTestAccuracy <- svmTestCM$overall["Accuracy"]
 # Fit a GBM Model and predict on testing set
 gbmTrain = trainControl(method = "cv", number = 10)
 set.seed(532)
-system.time(gbmFit <- train(classe ~., data = pmlTraininDF, method = "gbm",
-                preProcess = c("center", "scale"), trControl = gbmTrain))
+gbmFit <- train(classe ~., data = pmlTraininDF, method = "gbm",
+                preProcess = c("center", "scale"), trControl = gbmTrain)
 
 
 gbmTrainOutcome <- predict(gbmFit, pmlTraininDF)
@@ -139,8 +139,8 @@ gbmTestAccuracy <- gbmTestCM$overall["Accuracy"]
 # Fit a RF Model and predict on testing set
 rfTrain = trainControl(method = "cv", number = 3)
 set.seed(621)
-system.time(rfFit <- train(classe ~., data = pmlTraininDF, method = "rf",
-                preProcess = c("center", "scale"), trControl = rfTrain))
+rfFit <- train(classe ~., data = pmlTraininDF, method = "rf",
+                preProcess = c("center", "scale"), trControl = rfTrain)
 
 
 rfTrainOutcome <- predict(rfFit, pmlTraininDF)
@@ -251,4 +251,6 @@ set pml-testing. It achieves better acccuracy on the other models, except the
 random forest model. The rf model may be overfitting on the data (training 
 accuracy = 1) and performance might drop on the submission test set. In the
 combo model, the other two models can ccompensate to an extent fot any
-overfitting.
+overfitting.  
+
+Based upon the accuracy of the combo model on the validation data, I would expect an accuracy of approximartly 98% on out of sample data.
