@@ -1,0 +1,254 @@
+---
+title: "DSS Course Practical Machine Language"
+subtitle: "Practical Machine Learning - Assignment 01"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+---
+***
+The goal of this assignment is to predict the type of exercise based upon the collected data from sensors on the participant's belt, arm, forearm and the also on the dumbbell.  
+
+Two data sets are provided: pml-training.csv for training and evaluation various modeles; pml-testing.csv for prediction submissions for grading. In this analysis the pml-testing set was divided into three seperate subsets using the **createDataPartition** function from the **caret** package:  
+
+* A training set to fit several machine learning models. This set had 60% of the observations from the pml-training data set. Cross validation was also used on this data.
+* A testing set to evaluate the various models on unseen data and to select a model to use for the submission for grading. This set had 20% of the observations from the pml-training data set.
+* A  validation set to evaluate the predictive power of the final model. This set had 20% of the observations from the pml-training data set.  
+
+```{r message=FALSE, warning=FALSE}
+library(plyr)
+library(ggplot2)
+library(caret)
+library(lubridate)
+library(randomForest)
+library(dplyr)
+# Load training data set
+pmlTrainingRaw <- read.csv("pml-training.csv", stringsAsFactors = FALSE)
+```
+
+The pml-training data frame has **`r nrow(pmlTrainingRaw)`** observations and **`r ncol(pmlTrainingRaw)`** variables. In reviewing the data frame, many observations have little or no data for the majority of variables. Also, some variables were converted into more a usefull format. The data set was "cleaned" by using the following steps:  
+
+* The outcome variable **classe** was converted into a factor variable.  
+* The date/time fields were converted and consolidated into one datetime variable.
+* Obserations with the vatiable new_window = "yes" were removed ( a total of 406 observations).  
+* Variables with NA entries were removed.  
+* Variables with "" (blank strings) were removed.  
+* Five variables were remove which did not appear would contribute to the predictive ability of the model.  
+
+The number of variable were reduced fror 160 to 53 and the number of observations were reduced from 19,622 to 19,216.  
+
+```{r message=FALSE, warning=FALSE}
+pmlTrainingRaw$classe <- as.factor(pmlTrainingRaw$classe)
+
+# Select observations for only new_window == "no"
+selectOldWindow <- pmlTrainingRaw$new_window == "no"
+pmlTrainingTemp <- pmlTrainingRaw[selectOldWindow,]
+
+# Find variables which have no NA entries
+tempColNA <- colSums(is.na(pmlTrainingTemp))
+logiNoNA <- which(tempColNA == 0)
+# Select variables which there are no observation == NA
+pmlTrainingTemp <- pmlTrainingTemp[,logiNoNA]
+
+# Find variables which have no ""  entries
+tempColBlank <- colSums(pmlTrainingTemp == "")
+logiNoBlank <- which(tempColBlank == 0)
+
+# Select variables for which there are no observation == ""
+pmlTrainingTemp <- pmlTrainingTemp[,logiNoBlank]
+
+# Remove variables for the "raw" timestamp
+pmlTrainingTemp <- select(pmlTrainingTemp, -raw_timestamp_part_1, 
+                        -raw_timestamp_part_2)
+
+# Convert cvtd_timestamp variable to date time variable and rename to dtStamp
+pmlTrainingTemp$cvtd_timestamp <- strptime(pmlTrainingTemp$cvtd_timestamp, 
+                                           "%d/%m/%Y %H:%M")
+pmlTrainingTemp <- rename(pmlTrainingTemp, dtStamp = cvtd_timestamp)
+
+# Remove variables not used in trainig and prediction
+pmlTrainingTemp <- transmute(pmlTrainingTemp, X = NULL, user_name = NULL, 
+                                dtStamp = NULL, new_window = NULL, 
+                                num_window = NULL)
+```  
+
+After cleaning the pml-training data set, the division into training, testing, and validation sets was performed.  
+
+```{r message=FALSE, warning=FALSE}
+# Divide this data set into a training, testing and validation sets
+inTrain <- createDataPartition(y = pmlTrainingTemp$classe, p= 0.8, list = FALSE)
+pmlTrainingSplit <- pmlTrainingTemp[inTrain,]
+pmlValidationDF <- pmlTrainingTemp[-inTrain,] # 20% of pml-training
+
+inTrainSplit <- createDataPartition(y = pmlTrainingSplit$classe, p= 0.75, list = FALSE) #75% * 80% = 60% of pml-training
+pmlTraininDF <- pmlTrainingSplit[inTrainSplit,] 
+pmlTestingDF <- pmlTrainingSplit[- inTrainSplit,] # 20% of pml-training
+
+# Remove temporary data frame used to clean up raw data
+rm(pmlTrainingTemp, pmlTrainingSplit,pmlTrainingRaw, inTrain, inTrainSplit)
+```  
+
+Now to the fun part! The models selected for evaluation are:  
+
+* Support Vector Machines with Radial Basis Function Kernel - **svmRadial**  
+    + 10-fold cross validtion used in training the model.  
+    + Preprocessing of the data was limited to centering and scaling the data.  
+* Stochastic Gradient Boosting - **gbm**  
+    + 10-fold cross validtion used in training the model.  
+    + Preprocessing of the data was limited to centering and scaling the data.  
+* Random Forest - **rf**  
+    + 3-fold cross validtion used in training the model.  
+    + Preprocessing of the data was limited to centering and scaling the data. 
+
+The three models were fitted on the training set **pmlTraininDF**. Predictions were obtained from the training **pmlTraininDF** data frame and then from the testing  **pmlTestingDF** data frame.  
+
+```{r  message=FALSE, warning=FALSE, cache=TRUE}
+
+# Fit a SVM Model and predict on testing set
+svmTrain = trainControl(method = "cv", number = 10)
+set.seed(444)
+system.time(svmFit <- train(classe ~., data = pmlTraininDF, method = "svmRadial",
+                 preProcess = c("center", "scale"), trControl = svmTrain))
+
+svmTrainOutcome <- predict(svmFit, pmlTraininDF)
+svmTrainCM <- confusionMatrix(svmTrainOutcome, pmlTraininDF$classe)
+svmTrainAccuracy <- svmTrainCM$overall["Accuracy"]
+
+svmTestOutcome <- predict(svmFit, pmlTestingDF)
+svmTestCM <- confusionMatrix(svmTestOutcome, pmlTestingDF$classe)
+svmTestAccuracy <- svmTestCM$overall["Accuracy"]
+
+
+
+# Fit a GBM Model and predict on testing set
+gbmTrain = trainControl(method = "cv", number = 10)
+set.seed(532)
+system.time(gbmFit <- train(classe ~., data = pmlTraininDF, method = "gbm",
+                preProcess = c("center", "scale"), trControl = gbmTrain))
+
+
+gbmTrainOutcome <- predict(gbmFit, pmlTraininDF)
+gbmTrainCM <- confusionMatrix(gbmTrainOutcome, pmlTraininDF$classe)
+gbmTrainAccuracy <- gbmTrainCM$overall["Accuracy"]
+
+gbmTestOutcome <- predict(gbmFit, pmlTestingDF)
+gbmTestCM <- confusionMatrix(gbmTestOutcome, pmlTestingDF$classe)
+gbmTestAccuracy <- gbmTestCM$overall["Accuracy"]
+
+
+# Fit a RF Model and predict on testing set
+rfTrain = trainControl(method = "cv", number = 3)
+set.seed(621)
+system.time(rfFit <- train(classe ~., data = pmlTraininDF, method = "rf",
+                preProcess = c("center", "scale"), trControl = rfTrain))
+
+
+rfTrainOutcome <- predict(rfFit, pmlTraininDF)
+rfTrainCM <- confusionMatrix(rfTrainOutcome, pmlTraininDF$classe)
+rfTrainAccuracy <- rfTrainCM$overall["Accuracy"]
+
+
+rfTestOutcome <- predict(rfFit, pmlTestingDF)
+rfTestCM <- confusionMatrix(rfTestOutcome, pmlTestingDF$classe)
+rfTestAccuracy <- rfTestCM$overall["Accuracy"]
+```
+
+A simple combined model using "majotity vote" was then created and predictions made on the training and testing data sets to see if accuracy would be improved.  
+
+```{r message=FALSE, warning=FALSE}
+statMode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Combine the three prediction models 
+comboTestDF <- data.frame(rfTestOutcome, gbmTestOutcome, svmTestOutcome)
+
+# Calculate "majority vote" for each row
+comboTestMV <- apply(comboTestDF, 1, statMode)
+
+comboTestCM <- confusionMatrix(comboTestMV, pmlTestingDF$classe)
+comboTestAccuracy <- comboTestCM$overall["Accuracy"]
+```
+
+A data frame was created to summarize the accuracy of the three models and the combo on the training and testing data sets.  
+
+
+```{r message=FALSE, warning=FALSE}
+modelCompareTT <- data.frame(model = c("RF", "GBM", "SVM", "Combo"), 
+                           trainAccuracy = c(rfTrainAccuracy, gbmTrainAccuracy, 
+                                     svmTrainAccuracy, NA), 
+                           testAccuracy = c(rfTestAccuracy, gbmTestAccuracy, 
+                                    svmTestAccuracy, comboTestAccuracy))
+modelCompareTT
+```
+
+
+The next step was to evaluate the three models plus the combo model on the validation data set which has been keep aside throughut the process.  
+
+```{r message=FALSE, warning=FALSE}
+# Predict on the validation set
+## SVM
+svmValidOutcome <- predict(svmFit, pmlValidationDF)
+svmValidCM <- confusionMatrix(svmValidOutcome, pmlValidationDF$classe)
+svmValidAccuracy <- svmValidCM$overall["Accuracy"]
+
+## GBM
+gbmValidOutcome <- predict(gbmFit, pmlValidationDF)
+gbmValidCM <- confusionMatrix(gbmValidOutcome, pmlValidationDF$classe)
+gbmValidAccuracy <- gbmValidCM$overall["Accuracy"]
+
+## RF
+rfValidOutcome <- predict(rfFit, pmlValidationDF)
+rfValidCM <- confusionMatrix(rfValidOutcome, pmlValidationDF$classe)
+rfValidAccuracy <- rfValidCM$overall["Accuracy"]
+
+comboValidDF <- data.frame(rfValidOutcome, gbmValidOutcome, svmValidOutcome)
+comboValidMV <- apply(comboValidDF, 1, statMode)
+
+comboValidCM <- confusionMatrix(comboValidMV, pmlValidationDF$classe)
+comboValidAccuracy <- comboValidCM$overall["Accuracy"]
+```
+
+
+A data frame was also created to summarize the accuracy of the three models and the combo on the validation data set.  
+
+```{r message=FALSE, warning=FALSE}
+# Predict on the validation set
+## SVM
+svmValidOutcome <- predict(svmFit, pmlValidationDF)
+svmValidCM <- confusionMatrix(svmValidOutcome, pmlValidationDF$classe)
+svmValidAccuracy <- svmValidCM$overall["Accuracy"]
+
+## GBM
+gbmValidOutcome <- predict(gbmFit, pmlValidationDF)
+gbmValidCM <- confusionMatrix(gbmValidOutcome, pmlValidationDF$classe)
+gbmValidAccuracy <- gbmValidCM$overall["Accuracy"]
+
+## RF
+rfValidOutcome <- predict(rfFit, pmlValidationDF)
+rfValidCM <- confusionMatrix(rfValidOutcome, pmlValidationDF$classe)
+rfValidAccuracy <- rfValidCM$overall["Accuracy"]
+
+comboValidDF <- data.frame(rfValidOutcome, gbmValidOutcome, svmValidOutcome)
+comboValidMV <- apply(comboValidDF, 1, statMode)
+
+comboValidCM <- confusionMatrix(comboValidMV, pmlValidationDF$classe)
+comboValidAccuracy <- comboValidCM$overall["Accuracy"]
+
+modelCompareTTV <- data.frame(model = c("RF", "GBM", "SVM", "Combo"), 
+                           train = c(rfTrainAccuracy, gbmTrainAccuracy, 
+                                     svmTrainAccuracy, ""), 
+                           test = c(rfTestAccuracy, gbmTestAccuracy, 
+                                    svmTestAccuracy, comboTestAccuracy),
+                           valid = c(rfValidAccuracy, gbmValidAccuracy,
+                                     svmValidAccuracy, comboValidAccuracy))
+modelCompareTTV
+```
+
+The "Majority Vote" combo model will be used to predict on the submission test
+set pml-testing. It achieves better acccuracy on the other models, except the 
+random forest model. The rf model may be overfitting on the data (training 
+accuracy = 1) and performance might drop on the submission test set. In the
+combo model, the other two models can ccompensate to an extent fot any
+overfitting.
